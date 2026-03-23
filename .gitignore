@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pkl
+.DS_Store
+~$*
+.enrichment_cache.pkl
+
+# Escludi i file Excel con dati reali (privati, non vanno su GitHub)
+Prezzi/
+File editori/
+Esempio file output/
+Altri campi da Amazon/
+
+# Includi solo il codice
+# (app.py, requirements.txt, .streamlit/, .gitignore, CONTEXT*.md)
