@@ -1208,14 +1208,14 @@ def main():
         })
     st.dataframe(
         pd.DataFrame(summary_rows),
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 
     # ----------------------------------------------------------------
     # BOTTONE 1 — Output Base
     # ----------------------------------------------------------------
-    if st.button("🔄 Genera Output Base", type="primary", use_container_width=True):
+    if st.button("🔄 Genera Output Base", type="primary", width="stretch"):
         with st.spinner("Estrazione dati dai file editori…"):
             df_base, warnings, warning_eans = process_files(uploaded_bytes, prezzi_db)
 
@@ -1248,7 +1248,7 @@ def main():
                     st.warning(w)
 
         st.subheader("Anteprima output base")
-        st.dataframe(df.head(50), use_container_width=True, hide_index=True)
+        st.dataframe(df.head(50), width="stretch", hide_index=True)
 
         xlsx_base = export_xlsx(df, warn_eans, enriched=False)
         st.download_button(
@@ -1256,7 +1256,7 @@ def main():
             data=xlsx_base,
             file_name="output_base.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
+            width="stretch",
         )
 
         st.divider()
@@ -1280,7 +1280,7 @@ def main():
 
         if st.button(
             f"🌐 Arricchisci dati (~{mins_est} min per {da_cercare} ricerche web)",
-            use_container_width=True,
+            width="stretch",
         ):
             rows_raw      = st.session_state.get("rows_raw", [])
             eans          = df["EAN"].tolist()
@@ -1304,7 +1304,7 @@ def main():
         if st.session_state["df_enriched"] is not None:
             df_e = st.session_state["df_enriched"]
             st.subheader("Anteprima output completo")
-            st.dataframe(df_e.head(50), use_container_width=True, hide_index=True)
+            st.dataframe(df_e.head(50), width="stretch", hide_index=True)
 
             xlsx_enriched = export_xlsx(df_e, warn_eans, enriched=True)
             st.download_button(
@@ -1313,7 +1313,7 @@ def main():
                 file_name="output_completo.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 type="primary",
-                use_container_width=True,
+                width="stretch",
             )
 
 
