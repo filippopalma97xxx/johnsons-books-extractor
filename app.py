@@ -892,19 +892,22 @@ def process_files(
 ) -> tuple[pd.DataFrame, list[str], list[str]]:
     """
     Parse all uploaded files and do Prezzi price lookups.
-    Saves rows_raw (with all extra fields from extractors) to st.session_state["rows_raw"].
+    Accetta sia lista di UploadedFile (locale) sia dict {fname: bytes} (cloud).
+    Saves rows_raw in st.session_state["rows_raw"].
     Returns (df_base, warnings, warning_eans_list).
-    df_base has HEADERS_BASE columns (8).
     """
     all_base:    list[dict] = []
     all_raw:     list[dict] = []
     all_warnings: list[str] = []
     missing_price_eans: set[str] = set()
 
-    for file in uploaded_files:
-        fname = file.name
-        file.seek(0)
-        data = file.read()
+    # Normalizza input: accetta sia dict {nome: bytes} sia lista di UploadedFile
+    if isinstance(uploaded_files, dict):
+        files_iter = [(fname, data) for fname, data in uploaded_files.items()]
+    else:
+        files_iter = [(f.name, f.read()) for f in uploaded_files]
+
+    for fname, data in files_iter:
 
         paese, sconto = parse_filename(fname)
         prezzi_key    = select_prezzi_key(fname)
@@ -1158,6 +1161,20 @@ def main():
         st.info("👆 Carica uno o più file editori per iniziare")
         return
 
+    # Leggi i bytes subito e salvali in session_state — fix per Streamlit Cloud
+    # dove i file_uploader objects non supportano seek() in modo affidabile
+    file_keys = tuple(f.name for f in uploaded_files)
+    if st.session_state.get("_uploaded_keys") != file_keys:
+        st.session_state["_uploaded_bytes"] = {
+            f.name: f.read() for f in uploaded_files
+        }
+        st.session_state["_uploaded_keys"] = file_keys
+        # Reset output se cambiano i file
+        st.session_state.df_base     = None
+        st.session_state.df_enriched = None
+
+    uploaded_bytes = st.session_state["_uploaded_bytes"]
+
     # File summary table
     st.subheader(f"{len(uploaded_files)} file selezionati")
     summary_rows = []
@@ -1177,7 +1194,7 @@ def main():
     # --- Bottone 1: output base ---
     if st.button("🔄 Genera Output Base", type="primary", use_container_width=True):
         with st.spinner("Estrazione dati dai file editori…"):
-            df_base, warnings, warning_eans = process_files(uploaded_files, prezzi_db)
+            df_base, warnings, warning_eans = process_files(uploaded_bytes, prezzi_db)
         if df_base.empty:
             st.error("Nessuna riga estratta. Verifica i file caricati.")
             for w in warnings:
