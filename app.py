@@ -1153,11 +1153,12 @@ def main():
         if k not in st.session_state:
             st.session_state[k] = v
 
-    # --- File uploader ---
+    # --- File uploader editori ---
     uploaded_files = st.file_uploader(
         "Carica file editori (.xlsx)",
         type=["xlsx"],
         accept_multiple_files=True,
+        key="editori_uploader",
         help="Puoi trascinare più file contemporaneamente",
     )
 
@@ -1165,31 +1166,18 @@ def main():
         st.info("👆 Carica uno o più file editori per iniziare")
         return
 
-    # Leggi i bytes dei file editori e salvali in session_state.
-    # Su Streamlit Cloud i file_uploader vengono resettati ad ogni re-run,
-    # quindi leggiamo i bytes SOLO quando arrivano nuovi file (size > 0).
-    current_names = tuple(sorted(f.name for f in uploaded_files))
-    saved_names   = st.session_state.get("_uploaded_keys", ())
-
-    if current_names != saved_names:
-        new_bytes = {}
-        for f in uploaded_files:
-            try:
-                b = f.read()
-                if b:  # solo se non vuoto
-                    new_bytes[f.name] = b
-            except Exception:
-                pass
-        if new_bytes:
-            st.session_state["_uploaded_bytes"] = new_bytes
-            st.session_state["_uploaded_keys"]  = current_names
-            st.session_state.df_base     = None
-            st.session_state.df_enriched = None
-
-    uploaded_bytes = st.session_state.get("_uploaded_bytes", {})
+    # Leggi e salva i bytes immediatamente — necessario su Streamlit Cloud
+    uploaded_bytes = {}
+    for f in uploaded_files:
+        try:
+            b = bytes(f.read())
+            if len(b) > 0:
+                uploaded_bytes[f.name] = b
+        except Exception:
+            pass
 
     if not uploaded_bytes:
-        st.warning("⚠️ File non leggibili. Ricarica i file editori.")
+        st.warning("⚠️ Impossibile leggere i file. Ricaricali.")
         return
 
     # File summary table
