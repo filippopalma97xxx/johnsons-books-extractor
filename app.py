@@ -1126,7 +1126,7 @@ def main():
             key="prezzi_uploader",
         )
         if prezzi_file is not None:
-            b = prezzi_file.read()
+            b = prezzi_file.getvalue()
             if b:
                 parsed = load_prezzi(io.BytesIO(b))
                 if parsed:
@@ -1178,11 +1178,7 @@ def main():
     saved_names   = tuple(sorted(st.session_state["uploaded_bytes"].keys()))
 
     if current_names != saved_names:
-        new_bytes = {}
-        for f in uploaded_files:
-            b = f.read()
-            if b:
-                new_bytes[f.name] = b
+        new_bytes = {f.name: f.getvalue() for f in uploaded_files if f.getvalue()}
         if new_bytes:
             st.session_state["uploaded_bytes"] = new_bytes
             st.session_state["df_base"]        = None
