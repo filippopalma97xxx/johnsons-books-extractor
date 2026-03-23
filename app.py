@@ -1108,15 +1108,13 @@ def main():
     st.title("📚 Johnsons Books — Publisher File Extractor")
     st.caption("Carica uno o più file editori per generare il file di output unificato")
 
-    # --- Gestione Prezzi ---
-    # Carica prezzi in session_state (non cache_resource) per supportare BytesIO su cloud
-    st.subheader("⚙️ Tabella Prezzi")
-    with st.expander("Aggiorna tabella prezzi (opzionale)"):
+    # --- SIDEBAR: Gestione Prezzi (separata dal body principale) ---
+    with st.sidebar:
+        st.header("⚙️ Tabella Prezzi")
         uploaded_prezzi = st.file_uploader(
-            "Carica nuovo Prezzi.xlsx per sostituire la versione locale",
+            "Carica Prezzi.xlsx",
             type=["xlsx"],
             key="prezzi_uploader",
-            help="Lascia vuoto per usare la versione locale salvata",
         )
         if uploaded_prezzi is not None:
             raw_bytes = uploaded_prezzi.read()
@@ -1124,27 +1122,23 @@ def main():
                 parsed = load_prezzi(io.BytesIO(raw_bytes))
                 if parsed:
                     st.session_state["prezzi_db"] = parsed
-                    st.session_state["prezzi_label"] = f"✅ Caricato: {len(parsed)} fogli"
-                    st.success("✅ Prezzi.xlsx caricato correttamente!")
+                    st.success(f"✅ Caricato: {len(parsed)} fogli")
                 else:
-                    st.warning("⚠️ File non valido o senza fogli prezzi riconoscibili.")
+                    st.warning("⚠️ File non valido.")
 
-    # Recupera prezzi da session_state o da file locale
-    if "prezzi_db" not in st.session_state:
-        local_db = load_prezzi(PREZZI_PATH)
-        if local_db:
-            st.session_state["prezzi_db"] = local_db
-            st.session_state["prezzi_label"] = f"✅ Versione locale: {len(local_db)} fogli"
+        if "prezzi_db" not in st.session_state:
+            local_db = load_prezzi(PREZZI_PATH)
+            st.session_state["prezzi_db"] = local_db if local_db else {}
+
+        prezzi_db = st.session_state["prezzi_db"]
+        if prezzi_db:
+            st.caption(f"Attivo: {len(prezzi_db)} fogli")
+            for k in prezzi_db:
+                st.caption(f"• {k}")
         else:
-            st.session_state["prezzi_db"] = {}
-            st.session_state["prezzi_label"] = None
+            st.warning("Carica Prezzi.xlsx per abilitare il calcolo prezzi.")
 
-    prezzi_db = st.session_state["prezzi_db"]
-    label = st.session_state.get("prezzi_label")
-    if label:
-        st.caption(label)
-    else:
-        st.info("ℹ️ Apri l'expander qui sopra e carica Prezzi.xlsx per abilitare il calcolo prezzi.")
+    prezzi_db = st.session_state.get("prezzi_db", {})
 
     # --- Session state ---
     for k, v in [("df_base", None), ("df_enriched", None),
@@ -1153,12 +1147,11 @@ def main():
         if k not in st.session_state:
             st.session_state[k] = v
 
-    # --- File uploader editori ---
+    # --- File uploader editori (unico nel body) ---
     uploaded_files = st.file_uploader(
         "Carica file editori (.xlsx)",
         type=["xlsx"],
         accept_multiple_files=True,
-        key="editori_uploader",
         help="Puoi trascinare più file contemporaneamente",
     )
 
@@ -1166,18 +1159,13 @@ def main():
         st.info("👆 Carica uno o più file editori per iniziare")
         return
 
-    # Leggi e salva i bytes immediatamente — necessario su Streamlit Cloud
-    uploaded_bytes = {}
-    for f in uploaded_files:
-        try:
-            b = bytes(f.read())
-            if len(b) > 0:
-                uploaded_bytes[f.name] = b
-        except Exception:
-            pass
+    # Leggi bytes subito — su cloud i file_uploader vengono resettati ad ogni re-run
+    uploaded_bytes = {f.name: f.read() for f in uploaded_files}
+    # Filtra file vuoti
+    uploaded_bytes = {k: v for k, v in uploaded_bytes.items() if v}
 
     if not uploaded_bytes:
-        st.warning("⚠️ Impossibile leggere i file. Ricaricali.")
+        st.warning("⚠️ File non leggibili. Ricaricali.")
         return
 
     # File summary table
