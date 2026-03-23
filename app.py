@@ -1098,6 +1098,7 @@ def export_xlsx(df: pd.DataFrame,
 # Streamlit UI
 # ---------------------------------------------------------------------------
 
+
 def main():
     st.set_page_config(
         page_title="Johnsons Books",
@@ -1108,46 +1109,58 @@ def main():
     st.title("📚 Johnsons Books — Publisher File Extractor")
     st.caption("Carica uno o più file editori per generare il file di output unificato")
 
-    # --- SIDEBAR: Gestione Prezzi (separata dal body principale) ---
+    # ----------------------------------------------------------------
+    # SIDEBAR — Tabella Prezzi (uploader separato, non interferisce)
+    # ----------------------------------------------------------------
     with st.sidebar:
         st.header("⚙️ Tabella Prezzi")
-        uploaded_prezzi = st.file_uploader(
-            "Carica Prezzi.xlsx",
+
+        # Inizializza prezzi da file locale se disponibile
+        if "prezzi_db" not in st.session_state:
+            local = load_prezzi(PREZZI_PATH)
+            st.session_state["prezzi_db"] = local if local else {}
+
+        prezzi_file = st.file_uploader(
+            "Sostituisci Prezzi.xlsx",
             type=["xlsx"],
             key="prezzi_uploader",
         )
-        if uploaded_prezzi is not None:
-            raw_bytes = uploaded_prezzi.read()
-            if raw_bytes:
-                parsed = load_prezzi(io.BytesIO(raw_bytes))
+        if prezzi_file is not None:
+            b = prezzi_file.read()
+            if b:
+                parsed = load_prezzi(io.BytesIO(b))
                 if parsed:
                     st.session_state["prezzi_db"] = parsed
-                    st.success(f"✅ Caricato: {len(parsed)} fogli")
+                    st.success(f"✅ Caricato ({len(parsed)} fogli)")
                 else:
-                    st.warning("⚠️ File non valido.")
-
-        if "prezzi_db" not in st.session_state:
-            local_db = load_prezzi(PREZZI_PATH)
-            st.session_state["prezzi_db"] = local_db if local_db else {}
+                    st.error("File non valido")
 
         prezzi_db = st.session_state["prezzi_db"]
         if prezzi_db:
             st.caption(f"Attivo: {len(prezzi_db)} fogli")
-            for k in prezzi_db:
-                st.caption(f"• {k}")
         else:
             st.warning("Carica Prezzi.xlsx per abilitare il calcolo prezzi.")
 
     prezzi_db = st.session_state.get("prezzi_db", {})
 
-    # --- Session state ---
-    for k, v in [("df_base", None), ("df_enriched", None),
-                 ("enrich_cache", {}), ("warnings_base", []),
-                 ("warning_eans", []), ("rows_raw", [])]:
+    # ----------------------------------------------------------------
+    # SESSION STATE
+    # ----------------------------------------------------------------
+    for k, v in [
+        ("df_base", None),
+        ("df_enriched", None),
+        ("enrich_cache", {}),
+        ("warnings_base", []),
+        ("warning_eans", []),
+        ("rows_raw", []),
+        ("uploaded_bytes", {}),
+    ]:
         if k not in st.session_state:
             st.session_state[k] = v
 
-    # --- File uploader editori (unico nel body) ---
+    # ----------------------------------------------------------------
+    # BODY — File uploader editori (unico, senza expander)
+    # ----------------------------------------------------------------
     uploaded_files = st.file_uploader(
         "Carica file editori (.xlsx)",
         type=["xlsx"],
@@ -1159,58 +1172,82 @@ def main():
         st.info("👆 Carica uno o più file editori per iniziare")
         return
 
-    # Leggi bytes subito — su cloud i file_uploader vengono resettati ad ogni re-run
-    uploaded_bytes = {f.name: f.read() for f in uploaded_files}
-    # Filtra file vuoti
-    uploaded_bytes = {k: v for k, v in uploaded_bytes.items() if v}
+    # Leggi i bytes UNA SOLA VOLTA e salvali in session_state
+    # Confronta per nomi file — se cambiano, rileggi
+    current_names = tuple(sorted(f.name for f in uploaded_files))
+    saved_names   = tuple(sorted(st.session_state["uploaded_bytes"].keys()))
+
+    if current_names != saved_names:
+        new_bytes = {}
+        for f in uploaded_files:
+            b = f.read()
+            if b:
+                new_bytes[f.name] = b
+        if new_bytes:
+            st.session_state["uploaded_bytes"] = new_bytes
+            st.session_state["df_base"]        = None
+            st.session_state["df_enriched"]    = None
+
+    uploaded_bytes = st.session_state["uploaded_bytes"]
 
     if not uploaded_bytes:
-        st.warning("⚠️ File non leggibili. Ricaricali.")
+        st.warning("⚠️ Nessun file leggibile. Ricarica i file editori.")
         return
 
-    # File summary table
-    st.subheader(f"{len(uploaded_files)} file selezionati")
+    # ----------------------------------------------------------------
+    # RIEPILOGO FILE
+    # ----------------------------------------------------------------
+    st.subheader(f"{len(uploaded_bytes)} file selezionati")
     summary_rows = []
-    for f in uploaded_files:
-        paese, sconto = parse_filename(f.name)
-        key = select_prezzi_key(f.name)
-        ext = get_extractor(f.name)
+    for fname in uploaded_bytes:
+        paese, sconto = parse_filename(fname)
+        key           = select_prezzi_key(fname)
+        ext           = get_extractor(fname)
         summary_rows.append({
-            "File":          f.name,
+            "File":          fname,
             "Paese":         paese or "?",
             "Sconto":        f"{sconto:.0%}" if sconto else "?",
             "Foglio Prezzi": key or "—",
             "Parser":        ext.__name__ if ext else "auto-detect",
         })
-    st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True)
+    st.dataframe(
+        pd.DataFrame(summary_rows),
+        use_container_width=True,
+        hide_index=True,
+    )
 
-    # --- Bottone 1: output base ---
+    # ----------------------------------------------------------------
+    # BOTTONE 1 — Output Base
+    # ----------------------------------------------------------------
     if st.button("🔄 Genera Output Base", type="primary", use_container_width=True):
         with st.spinner("Estrazione dati dai file editori…"):
             df_base, warnings, warning_eans = process_files(uploaded_bytes, prezzi_db)
+
         if df_base.empty:
             st.error("Nessuna riga estratta. Verifica i file caricati.")
             for w in warnings:
                 st.warning(w)
-            return
-        st.session_state.df_base      = df_base
-        st.session_state.df_enriched  = None
-        st.session_state.warnings_base = warnings
-        st.session_state.warning_eans  = warning_eans
+        else:
+            st.session_state["df_base"]       = df_base
+            st.session_state["df_enriched"]   = None
+            st.session_state["warnings_base"] = warnings
+            st.session_state["warning_eans"]  = warning_eans
 
-    # --- Mostra output base ---
-    if st.session_state.df_base is not None:
-        df        = st.session_state.df_base
-        warnings  = st.session_state.warnings_base
-        warn_eans = st.session_state.warning_eans
+    # ----------------------------------------------------------------
+    # RISULTATO BASE
+    # ----------------------------------------------------------------
+    if st.session_state["df_base"] is not None:
+        df        = st.session_state["df_base"]
+        warnings  = st.session_state["warnings_base"]
+        warn_eans = st.session_state["warning_eans"]
 
         col1, col2, col3 = st.columns(3)
-        col1.metric("File processati", len(uploaded_files))
+        col1.metric("File processati", len(uploaded_bytes))
         col2.metric("EAN totali",      len(df))
         col3.metric("Senza prezzo",    len(warn_eans))
 
         if warnings:
-            with st.expander(f"⚠️ {len(warnings)} avvisi", expanded=False):
+            with st.expander(f"⚠️ {len(warnings)} avvisi"):
                 for w in warnings:
                     st.warning(w)
 
@@ -1228,49 +1265,48 @@ def main():
 
         st.divider()
 
-        # --- Bottone 2: enrichment ---
-        n_ean       = len(df)
-        cache       = st.session_state.enrich_cache
+        # ----------------------------------------------------------------
+        # BOTTONE 2 — Arricchimento Web
+        # ----------------------------------------------------------------
+        n_ean        = len(df)
+        cache        = st.session_state["enrich_cache"]
         cached_count = sum(1 for e in df["EAN"].tolist() if f"web_{e}" in cache)
-        da_cercare  = n_ean - cached_count
-        mins_est    = max(1, round(da_cercare * 0.7 / 60))
+        da_cercare   = n_ean - cached_count
+        mins_est     = max(1, round(da_cercare * 0.7 / 60))
 
         st.subheader("🌐 Arricchimento dati (opzionale)")
         st.caption(
-            "Aggiunge: descrizione, pagine, rilegatura, lingua, dimensioni, BISAC. "
-            "Prima usa i dati già presenti nel file editore, poi cerca online i campi mancanti."
+            "Aggiunge descrizione, pagine, rilegatura, lingua, dimensioni, BISAC. "
+            "Prima usa i dati dal file editore, poi cerca online i campi mancanti."
         )
         if cached_count > 0:
-            st.caption(f"✅ {cached_count} EAN già in cache — solo {da_cercare} nuove ricerche web")
+            st.caption(f"✅ {cached_count} EAN già in cache — {da_cercare} nuove ricerche web")
 
         if st.button(
-            f"🌐 Arricchisci dati  (~{mins_est} min per {da_cercare} ricerche web)",
+            f"🌐 Arricchisci dati (~{mins_est} min per {da_cercare} ricerche web)",
             use_container_width=True,
         ):
-            rows_raw = st.session_state.get("rows_raw", [])
-            eans     = df["EAN"].tolist()
-
-            progress_bar = st.progress(0, text="Arricchimento in corso…")
+            rows_raw      = st.session_state.get("rows_raw", [])
+            eans          = df["EAN"].tolist()
+            progress_bar  = st.progress(0, text="Arricchimento in corso…")
             enriched_data = {}
 
             for i, ean in enumerate(eans):
-                row_data = next((r for r in rows_raw if r.get("ean") == ean), {})
+                row_data           = next((r for r in rows_raw if r.get("ean") == ean), {})
                 enriched_data[ean] = enrich_ean(ean, row_data, cache)
-                from_cache = f"web_{ean}" in cache
                 progress_bar.progress(
                     (i + 1) / len(eans),
-                    text=f"EAN {i+1}/{len(eans)} — {'da cache' if from_cache else 'ricerca web'}…"
+                    text=f"EAN {i+1}/{len(eans)}…",
                 )
 
-            st.session_state.enrich_cache = cache
+            st.session_state["enrich_cache"] = cache
             progress_bar.empty()
-
             df_enriched = build_enriched_df(df, enriched_data)
-            st.session_state.df_enriched = df_enriched
+            st.session_state["df_enriched"] = df_enriched
             st.success(f"✅ Completato per {len(eans)} EAN")
 
-        if st.session_state.df_enriched is not None:
-            df_e = st.session_state.df_enriched
+        if st.session_state["df_enriched"] is not None:
+            df_e = st.session_state["df_enriched"]
             st.subheader("Anteprima output completo")
             st.dataframe(df_e.head(50), use_container_width=True, hide_index=True)
 
