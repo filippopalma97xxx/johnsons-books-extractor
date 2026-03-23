@@ -128,7 +128,6 @@ def select_prezzi_key(filename: str) -> str | None:
 # Prezzi.xlsx loader
 # ---------------------------------------------------------------------------
 
-@st.cache_resource
 def load_prezzi(path) -> dict[str, pd.DataFrame]:
     """
     Load Prezzi.xlsx with data_only=True.
@@ -1110,6 +1109,7 @@ def main():
     st.caption("Carica uno o più file editori per generare il file di output unificato")
 
     # --- Gestione Prezzi ---
+    # Carica prezzi in session_state (non cache_resource) per supportare BytesIO su cloud
     st.subheader("⚙️ Tabella Prezzi")
     with st.expander("Aggiorna tabella prezzi (opzionale)"):
         uploaded_prezzi = st.file_uploader(
@@ -1119,26 +1119,32 @@ def main():
             help="Lascia vuoto per usare la versione locale salvata",
         )
         if uploaded_prezzi is not None:
-            st.session_state["prezzi_bytes"] = uploaded_prezzi.getbuffer().tobytes()
-            load_prezzi.clear()
-            st.success("✅ Prezzi.xlsx caricato.")
-            st.rerun()
+            raw_bytes = uploaded_prezzi.read()
+            if raw_bytes:
+                parsed = load_prezzi(io.BytesIO(raw_bytes))
+                if parsed:
+                    st.session_state["prezzi_db"] = parsed
+                    st.session_state["prezzi_label"] = f"✅ Caricato: {len(parsed)} fogli"
+                    st.success("✅ Prezzi.xlsx caricato correttamente!")
+                else:
+                    st.warning("⚠️ File non valido o senza fogli prezzi riconoscibili.")
 
-        prezzi_bytes = st.session_state.get("prezzi_bytes")
-        if prezzi_bytes:
-            prezzi_db = load_prezzi(io.BytesIO(prezzi_bytes))
-            if prezzi_db:
-                st.caption(f"✅ Versione caricata: {len(prezzi_db)} fogli")
-            else:
-                prezzi_db = {}
-                st.warning("⚠️ File Prezzi.xlsx non valido. Ricaricalo.")
+    # Recupera prezzi da session_state o da file locale
+    if "prezzi_db" not in st.session_state:
+        local_db = load_prezzi(PREZZI_PATH)
+        if local_db:
+            st.session_state["prezzi_db"] = local_db
+            st.session_state["prezzi_label"] = f"✅ Versione locale: {len(local_db)} fogli"
         else:
-            prezzi_db = load_prezzi(PREZZI_PATH)
-            if prezzi_db:
-                st.caption(f"✅ Versione locale attiva: {len(prezzi_db)} fogli")
-            else:
-                prezzi_db = {}
-                st.info("ℹ️ Carica Prezzi.xlsx qui sopra per abilitare il calcolo prezzi.")
+            st.session_state["prezzi_db"] = {}
+            st.session_state["prezzi_label"] = None
+
+    prezzi_db = st.session_state["prezzi_db"]
+    label = st.session_state.get("prezzi_label")
+    if label:
+        st.caption(label)
+    else:
+        st.info("ℹ️ Apri l'expander qui sopra e carica Prezzi.xlsx per abilitare il calcolo prezzi.")
 
     # --- Session state ---
     for k, v in [("df_base", None), ("df_enriched", None),
