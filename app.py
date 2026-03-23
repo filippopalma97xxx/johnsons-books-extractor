@@ -1165,19 +1165,32 @@ def main():
         st.info("👆 Carica uno o più file editori per iniziare")
         return
 
-    # Leggi i bytes subito e salvali in session_state — fix per Streamlit Cloud
-    # dove i file_uploader objects non supportano seek() in modo affidabile
-    file_keys = tuple(f.name for f in uploaded_files)
-    if st.session_state.get("_uploaded_keys") != file_keys:
-        st.session_state["_uploaded_bytes"] = {
-            f.name: f.read() for f in uploaded_files
-        }
-        st.session_state["_uploaded_keys"] = file_keys
-        # Reset output se cambiano i file
-        st.session_state.df_base     = None
-        st.session_state.df_enriched = None
+    # Leggi i bytes dei file editori e salvali in session_state.
+    # Su Streamlit Cloud i file_uploader vengono resettati ad ogni re-run,
+    # quindi leggiamo i bytes SOLO quando arrivano nuovi file (size > 0).
+    current_names = tuple(sorted(f.name for f in uploaded_files))
+    saved_names   = st.session_state.get("_uploaded_keys", ())
 
-    uploaded_bytes = st.session_state["_uploaded_bytes"]
+    if current_names != saved_names:
+        new_bytes = {}
+        for f in uploaded_files:
+            try:
+                b = f.read()
+                if b:  # solo se non vuoto
+                    new_bytes[f.name] = b
+            except Exception:
+                pass
+        if new_bytes:
+            st.session_state["_uploaded_bytes"] = new_bytes
+            st.session_state["_uploaded_keys"]  = current_names
+            st.session_state.df_base     = None
+            st.session_state.df_enriched = None
+
+    uploaded_bytes = st.session_state.get("_uploaded_bytes", {})
+
+    if not uploaded_bytes:
+        st.warning("⚠️ File non leggibili. Ricarica i file editori.")
+        return
 
     # File summary table
     st.subheader(f"{len(uploaded_files)} file selezionati")
