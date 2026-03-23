@@ -133,16 +133,16 @@ def load_prezzi(path) -> dict[str, pd.DataFrame]:
     """
     Load Prezzi.xlsx with data_only=True.
     Accepts a file path (str) or a BytesIO / file-like object.
-    Returns dict keyed by stripped sheet name:
-      { sheet_name: DataFrame[price, prezzo_iva, costo_amazon] }
-
-    Each sheet structure:
-      Row 0: label (skip)
-      Row 1: empty (skip)
-      Row 2: column headers
-      Row 3+: data
+    Returns dict keyed by stripped sheet name.
+    Returns empty dict if file not found (cloud mode).
     """
-    wb = openpyxl.load_workbook(path, data_only=True)
+    import os
+    if isinstance(path, str) and not os.path.exists(path):
+        return {}
+    try:
+        wb = openpyxl.load_workbook(path, data_only=True)
+    except Exception:
+        return {}
     result: dict[str, pd.DataFrame] = {}
 
     for sname in wb.sheetnames:
@@ -1126,21 +1126,19 @@ def main():
 
         prezzi_bytes = st.session_state.get("prezzi_bytes")
         if prezzi_bytes:
-            try:
-                prezzi_db = load_prezzi(io.BytesIO(prezzi_bytes))
-                st.caption(f"Versione caricata: {len(prezzi_db)} fogli — " +
-                           ", ".join(prezzi_db.keys()))
-            except Exception:
+            prezzi_db = load_prezzi(io.BytesIO(prezzi_bytes))
+            if prezzi_db:
+                st.caption(f"✅ Versione caricata: {len(prezzi_db)} fogli")
+            else:
                 prezzi_db = {}
                 st.warning("⚠️ File Prezzi.xlsx non valido. Ricaricalo.")
         else:
-            try:
-                prezzi_db = load_prezzi(PREZZI_PATH)
-                st.caption(f"Versione locale: {len(prezzi_db)} fogli — " +
-                           ", ".join(prezzi_db.keys()))
-            except Exception:
+            prezzi_db = load_prezzi(PREZZI_PATH)
+            if prezzi_db:
+                st.caption(f"✅ Versione locale attiva: {len(prezzi_db)} fogli")
+            else:
                 prezzi_db = {}
-                st.warning("⚠️ Prezzi.xlsx non trovato. Caricalo dall'expander.")
+                st.info("ℹ️ Carica Prezzi.xlsx qui sopra per abilitare il calcolo prezzi.")
 
     # --- Session state ---
     for k, v in [("df_base", None), ("df_enriched", None),
