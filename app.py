@@ -106,22 +106,66 @@ def parse_filename(filename: str) -> tuple[str | None, float | None]:
     return country, discount
 
 
-def select_prezzi_key(filename: str) -> str | None:
-    """Map a publisher filename to the corresponding Prezzi.xlsx sheet (stripped name)."""
+def select_prezzi_key(filename: str, prezzi_db: dict | None = None) -> str | None:
+    """
+    Trova il foglio Prezzi corretto per un file editore.
+    Usa SOLO paese + percentuale — funziona con qualsiasi editore.
+
+    I fogli di Prezzi.xlsx hanno nomi tipo:
+      '60% GB', '55% GB', 'HACHETTE 42% FR ', 'INTERFORUM 42% FR',
+      'HCUS 60% US', 'MPS 58% US', 'RHDE 51,43% DE'
+
+    Logica:
+    1. Estrai paese e % dal nome file
+    2. Cerca il foglio con paese e % corrispondenti
+    3. Se più fogli matchano (es. FR 42% = HACHETTE e INTERFORUM),
+       usa il nome editore come tiebreaker
+    """
+    paese, sconto = parse_filename(filename)
+    if not paese or not sconto:
+        return None
+
+    pct = round(sconto * 100)
     f = filename.upper()
-    if "HACHETTE" in f:   return "HACHETTE 42% FR"
-    if "INTERFORUM" in f: return "INTERFORUM 42% FR"
-    if "HCUS" in f:       return "HCUS 60% US"
-    if "MPS" in f:        return "MPS 58% US"
-    if "RHDE" in f:       return "RHDE 51,43% DE"
-    if re.search(r"\bDE\b", filename) and not re.search(r"\b(GB|FR|US)\b", filename):
-        return "RHDE 51,43% DE"
-    if re.search(r"\bGB\b", filename):
-        if "60" in f: return "60% GB"
-        if "55" in f: return "55% GB"
-        if "53" in f: return "53% GB"
-        if "45" in f: return "45% GB"
-    return None
+
+    # Costruisci pool di fogli da cercare
+    # Se prezzi_db è disponibile usa i fogli reali, altrimenti usa i nomi noti
+    known_sheets = list(prezzi_db.keys()) if prezzi_db else [
+        "HACHETTE 42% FR", "INTERFORUM 42% FR",
+        "60% GB", "55% GB", "53% GB", "45% GB",
+        "HCUS 60% US", "MPS 58% US", "RHDE 51,43% DE",
+    ]
+
+    # Trova tutti i fogli che contengono il paese e la percentuale giusta
+    candidates = []
+    for sheet in known_sheets:
+        s = sheet.upper().strip()
+        # Controlla che il foglio contenga il paese
+        if paese not in s:
+            continue
+        # Controlla che contenga la percentuale (gestisce sia "60%" che "51,43%")
+        pct_in_sheet = re.search(r'(\d+(?:[,\.]\d+)?)\s*%', s)
+        if not pct_in_sheet:
+            continue
+        sheet_pct = round(float(pct_in_sheet.group(1).replace(',', '.')))
+        if sheet_pct == pct:
+            candidates.append(sheet)
+
+    if not candidates:
+        return None
+    if len(candidates) == 1:
+        return candidates[0]
+
+    # Tiebreaker: più di un foglio con stesso paese+% (es. FR 42%)
+    # Cerca il nome editore nel filename
+    for sheet in candidates:
+        sheet_words = sheet.upper().replace('%', '').replace('FR', '').replace('GB', '').replace('US', '').replace('DE', '').split()
+        for word in sheet_words:
+            if len(word) > 3 and word in f:
+                return sheet
+
+    # Default: prendi il primo candidato
+    return candidates[0]
 
 
 # ---------------------------------------------------------------------------
@@ -865,20 +909,15 @@ def extract_auto(data: bytes, filename: str) -> tuple[list[dict], list[str]]:
 def get_extractor(filename: str):
     """Return the hardcoded extractor for a known publisher file, or None for auto-detect."""
     f = filename.upper()
+    paese, _ = parse_filename(filename)
     if "CANONGATE" in f:                                return extract_gb60_canongate
     if "BLOOMSBURY ACADEMIC" in f:                      return extract_gb45_bloomsbury_academic
     if "LONELY PLANET" in f:                            return extract_gb53_lonely_planet
     if "BLOOMSBURY ITALIAN" in f or "ITALIAN INTEREST" in f: return extract_gb55_bloomsbury_italian
-    if "HACHETTE" in f:                                 return extract_hachette
+    if "HACHETTE" in f and paese == "FR":               return extract_hachette
     if "INTERFORUM" in f:                               return extract_interforum
     if "HCUS" in f:                                     return extract_hcus
     if "MPS" in f:                                      return extract_mps
-    # Fallback by country+discount pattern
-    if re.search(r"\bGB\b", filename):
-        if "60" in f: return extract_gb60_canongate
-        if "55" in f: return extract_gb55_bloomsbury_italian
-        if "53" in f: return extract_gb53_lonely_planet
-        if "45" in f: return extract_gb45_bloomsbury_academic
     return None
 
 
@@ -909,7 +948,7 @@ def process_files(
     for fname, data in files_iter:
 
         paese, sconto = parse_filename(fname)
-        prezzi_key    = select_prezzi_key(fname)
+        prezzi_key    = select_prezzi_key(fname, prezzi_db)
         prezzi_df     = prezzi_db.get(prezzi_key) if prezzi_key else None
 
         if prezzi_key and prezzi_df is None:
@@ -1197,7 +1236,7 @@ def main():
     summary_rows = []
     for fname in uploaded_bytes:
         paese, sconto = parse_filename(fname)
-        key           = select_prezzi_key(fname)
+        key           = select_prezzi_key(fname, prezzi_db)
         ext           = get_extractor(fname)
         summary_rows.append({
             "File":          fname,
