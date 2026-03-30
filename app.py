@@ -574,10 +574,10 @@ def extract_gb60_canongate(data: bytes) -> tuple[list[dict], list[str]]:
             if "Pub Date" in df.columns:
                 r["pub_date"] = dfrow.get("Pub Date")
     except Exception as exc:
-        warns.append(f"Canongate parser failed ({exc}), uso auto-detect")
         auto_rows, auto_warns = extract_auto(data, "canongate")
         if auto_rows:
             rows = auto_rows
+            warns.append(f"ℹ️ Canongate: struttura non standard, auto-detect applicato ({len(rows)} righe trovate)")
             warns.extend(auto_warns)
     return rows, warns
 
@@ -603,10 +603,10 @@ def extract_gb45_bloomsbury_academic(data: bytes) -> tuple[list[dict], list[str]
             if "Publication Date" in df.columns:
                 r["pub_date"] = dfrow.get("Publication Date")
     except Exception as exc:
-        warns.append(f"Bloomsbury Academic parser failed ({exc}), uso auto-detect")
         auto_rows, auto_warns = extract_auto(data, "bloomsbury-academic")
         if auto_rows:
             rows = auto_rows
+            warns.append(f"ℹ️ Bloomsbury Academic: struttura non standard, auto-detect applicato ({len(rows)} righe trovate)")
             warns.extend(auto_warns)
     return rows, warns
 
@@ -669,10 +669,10 @@ def extract_gb53_lonely_planet(data: bytes) -> tuple[list[dict], list[str]]:
                 "lingua":        "Inglese",
             })
     except Exception as exc:
-        warns.append(f"Lonely Planet parser failed ({exc}), uso auto-detect")
         auto_rows, auto_warns = extract_auto(data, "lonely-planet")
         if auto_rows:
             rows = auto_rows
+            warns.append(f"ℹ️ Lonely Planet: struttura non standard, auto-detect applicato ({len(rows)} righe trovate)")
             warns.extend(auto_warns)
     return rows, warns
 
@@ -697,10 +697,10 @@ def extract_gb55_bloomsbury_italian(data: bytes) -> tuple[list[dict], list[str]]
             if "Category" in df.columns:
                 r["bisac"] = dfrow.get("Category")
     except Exception as exc:
-        warns.append(f"Bloomsbury Italian parser failed ({exc}), uso auto-detect")
         auto_rows, auto_warns = extract_auto(data, "bloomsbury-italian")
         if auto_rows:
             rows = auto_rows
+            warns.append(f"ℹ️ Bloomsbury Italian: struttura non standard, auto-detect applicato ({len(rows)} righe trovate)")
             warns.extend(auto_warns)
     return rows, warns
 
@@ -726,10 +726,10 @@ def extract_hachette(data: bytes) -> tuple[list[dict], list[str]]:
             if "Date de MEV" in df.columns:
                 r["pub_date"] = dfrow.get("Date de MEV")
     except Exception as exc:
-        warns.append(f"Hachette parser failed ({exc}), uso auto-detect")
         auto_rows, auto_warns = extract_auto(data, "hachette")
         if auto_rows:
             rows = auto_rows
+            warns.append(f"ℹ️ Hachette: struttura non standard, auto-detect applicato ({len(rows)} righe trovate)")
             warns.extend(auto_warns)
     return rows, warns
 
@@ -746,10 +746,10 @@ def extract_interforum(data: bytes) -> tuple[list[dict], list[str]]:
         for r in rows:
             r["lingua"] = "Francese"
     except Exception as exc:
-        warns.append(f"Interforum parser failed ({exc}), uso auto-detect")
         auto_rows, auto_warns = extract_auto(data, "interforum")
         if auto_rows:
             rows = auto_rows
+            warns.append(f"ℹ️ Interforum: struttura non standard, auto-detect applicato ({len(rows)} righe trovate)")
             warns.extend(auto_warns)
     return rows, warns
 
@@ -811,10 +811,10 @@ def extract_hcus(data: bytes) -> tuple[list[dict], list[str]]:
                     "lingua":        "Inglese",
                 })
     except Exception as exc:
-        warns.append(f"HCUS parser failed ({exc}), uso auto-detect")
         auto_rows, auto_warns = extract_auto(data, "hcus")
         if auto_rows:
             rows = auto_rows
+            warns.append(f"ℹ️ HCUS: struttura non standard, auto-detect applicato ({len(rows)} righe trovate)")
             warns.extend(auto_warns)
     return rows, warns
 
@@ -839,10 +839,10 @@ def extract_mps(data: bytes) -> tuple[list[dict], list[str]]:
             if "Pub Date" in df.columns:
                 r["pub_date"] = dfrow.get("Pub Date")
     except Exception as exc:
-        warns.append(f"MPS parser failed ({exc}), uso auto-detect")
         auto_rows, auto_warns = extract_auto(data, "mps")
         if auto_rows:
             rows = auto_rows
+            warns.append(f"ℹ️ MPS: struttura non standard, auto-detect applicato ({len(rows)} righe trovate)")
             warns.extend(auto_warns)
     return rows, warns
 
@@ -929,6 +929,11 @@ def extract_auto(data: bytes, filename: str) -> tuple[list[dict], list[str]]:
                     "autore":  _get(auth_idx),
                     "prezzo":  price,
                 })
+                if len(rows) >= 15000:
+                    warns.append(
+                        f"ℹ️ Sheet '{sname}' troncato a 15.000 righe per evitare problemi di memoria"
+                    )
+                    break
     except Exception as exc:
         warns.append(f"Auto-detect error in {filename}: {exc}")
     return rows, warns
@@ -1293,7 +1298,10 @@ def main():
         if df_base.empty:
             st.error("Nessuna riga estratta. Verifica i file caricati.")
             for w in warnings:
-                st.warning(w)
+                if w.startswith("ℹ️"):
+                    st.info(w)
+                else:
+                    st.warning(w)
         else:
             st.session_state["df_base"]       = df_base
             st.session_state["df_enriched"]   = None
@@ -1314,9 +1322,16 @@ def main():
         col3.metric("Senza prezzo",    len(warn_eans))
 
         if warnings:
-            with st.expander(f"⚠️ {len(warnings)} avvisi"):
-                for w in warnings:
-                    st.warning(w)
+            warns_err  = [w for w in warnings if not w.startswith("ℹ️")]
+            warns_info = [w for w in warnings if w.startswith("ℹ️")]
+            if warns_err:
+                with st.expander(f"⚠️ {len(warns_err)} avvisi"):
+                    for w in warns_err:
+                        st.warning(w)
+            if warns_info:
+                with st.expander(f"ℹ️ {len(warns_info)} note (auto-detect)", expanded=False):
+                    for w in warns_info:
+                        st.info(w)
 
         st.subheader("Anteprima output base")
         st.dataframe(df.head(50), width="stretch", hide_index=True)
@@ -1348,6 +1363,12 @@ def main():
         )
         if cached_count > 0:
             st.caption(f"✅ {cached_count} EAN già in cache — {da_cercare} nuove ricerche web")
+
+        if da_cercare > 500:
+            st.warning(
+                f"⚠️ {da_cercare} EAN da cercare. L'arricchimento web per volumi grandi può richiedere molto tempo. "
+                "Considera di processare i file in batch più piccoli."
+            )
 
         if st.button(
             f"🌐 Arricchisci dati (~{mins_est} min per {da_cercare} ricerche web)",
