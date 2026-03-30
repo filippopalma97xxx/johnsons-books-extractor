@@ -72,8 +72,8 @@ FIXED_VALUES = {
 }
 
 # Auto-detection keywords
-PRICE_KW     = ["price", "prix", "prezzo", "rrp", "pph", "ppttc", "pricing", "pub price", "rrp value"]
-EAN_KW       = ["ean", "isbn", "isbn-13", "isbn13", "ean 13"]
+PRICE_KW     = ["price", "prix", "prezzo", "rrp", "pph", "ppttc", "pricing", "pub price", "rrp value", "ppht", "prix ppht", "prix ppttc"]
+EAN_KW       = ["ean", "isbn", "isbn-13", "isbn13", "ean 13", "ean13"]
 TITLE_KW     = ["title", "titre", "titolo", "libellé article", "libelle article"]
 AUTHOR_KW    = ["author", "auteur", "autore", "nom de l'auteur"]
 PUBLISHER_KW = ["publisher", "imprint", "editeur", "editore", "marque"]
@@ -535,7 +535,7 @@ def extract_gb60_canongate(data: bytes) -> tuple[list[dict], list[str]]:
             (s for s in wb.sheetnames if "pub schedule" in s.lower()), None
         )
         if not sheet_name:
-            return [], ["Sheet 'Pub schedule' not found in Canongate file"]
+            raise ValueError("Sheet 'Pub schedule' not found in Canongate file")
 
         df = pd.read_excel(io.BytesIO(data), sheet_name=sheet_name, header=0)
         df.columns = [str(c).strip() for c in df.columns]
@@ -574,7 +574,11 @@ def extract_gb60_canongate(data: bytes) -> tuple[list[dict], list[str]]:
             if "Pub Date" in df.columns:
                 r["pub_date"] = dfrow.get("Pub Date")
     except Exception as exc:
-        warns.append(f"Canongate extract error: {exc}")
+        warns.append(f"Canongate parser failed ({exc}), uso auto-detect")
+        auto_rows, auto_warns = extract_auto(data, "canongate")
+        if auto_rows:
+            rows = auto_rows
+            warns.extend(auto_warns)
     return rows, warns
 
 
@@ -599,7 +603,11 @@ def extract_gb45_bloomsbury_academic(data: bytes) -> tuple[list[dict], list[str]
             if "Publication Date" in df.columns:
                 r["pub_date"] = dfrow.get("Publication Date")
     except Exception as exc:
-        warns.append(f"Bloomsbury Academic extract error: {exc}")
+        warns.append(f"Bloomsbury Academic parser failed ({exc}), uso auto-detect")
+        auto_rows, auto_warns = extract_auto(data, "bloomsbury-academic")
+        if auto_rows:
+            rows = auto_rows
+            warns.extend(auto_warns)
     return rows, warns
 
 
@@ -661,7 +669,11 @@ def extract_gb53_lonely_planet(data: bytes) -> tuple[list[dict], list[str]]:
                 "lingua":        "Inglese",
             })
     except Exception as exc:
-        warns.append(f"Lonely Planet extract error: {exc}")
+        warns.append(f"Lonely Planet parser failed ({exc}), uso auto-detect")
+        auto_rows, auto_warns = extract_auto(data, "lonely-planet")
+        if auto_rows:
+            rows = auto_rows
+            warns.extend(auto_warns)
     return rows, warns
 
 
@@ -685,7 +697,11 @@ def extract_gb55_bloomsbury_italian(data: bytes) -> tuple[list[dict], list[str]]
             if "Category" in df.columns:
                 r["bisac"] = dfrow.get("Category")
     except Exception as exc:
-        warns.append(f"Bloomsbury Italian extract error: {exc}")
+        warns.append(f"Bloomsbury Italian parser failed ({exc}), uso auto-detect")
+        auto_rows, auto_warns = extract_auto(data, "bloomsbury-italian")
+        if auto_rows:
+            rows = auto_rows
+            warns.extend(auto_warns)
     return rows, warns
 
 
@@ -710,7 +726,11 @@ def extract_hachette(data: bytes) -> tuple[list[dict], list[str]]:
             if "Date de MEV" in df.columns:
                 r["pub_date"] = dfrow.get("Date de MEV")
     except Exception as exc:
-        warns.append(f"Hachette extract error: {exc}")
+        warns.append(f"Hachette parser failed ({exc}), uso auto-detect")
+        auto_rows, auto_warns = extract_auto(data, "hachette")
+        if auto_rows:
+            rows = auto_rows
+            warns.extend(auto_warns)
     return rows, warns
 
 
@@ -726,7 +746,11 @@ def extract_interforum(data: bytes) -> tuple[list[dict], list[str]]:
         for r in rows:
             r["lingua"] = "Francese"
     except Exception as exc:
-        warns.append(f"Interforum extract error: {exc}")
+        warns.append(f"Interforum parser failed ({exc}), uso auto-detect")
+        auto_rows, auto_warns = extract_auto(data, "interforum")
+        if auto_rows:
+            rows = auto_rows
+            warns.extend(auto_warns)
     return rows, warns
 
 
@@ -787,7 +811,11 @@ def extract_hcus(data: bytes) -> tuple[list[dict], list[str]]:
                     "lingua":        "Inglese",
                 })
     except Exception as exc:
-        warns.append(f"HCUS extract error: {exc}")
+        warns.append(f"HCUS parser failed ({exc}), uso auto-detect")
+        auto_rows, auto_warns = extract_auto(data, "hcus")
+        if auto_rows:
+            rows = auto_rows
+            warns.extend(auto_warns)
     return rows, warns
 
 
@@ -811,7 +839,11 @@ def extract_mps(data: bytes) -> tuple[list[dict], list[str]]:
             if "Pub Date" in df.columns:
                 r["pub_date"] = dfrow.get("Pub Date")
     except Exception as exc:
-        warns.append(f"MPS extract error: {exc}")
+        warns.append(f"MPS parser failed ({exc}), uso auto-detect")
+        auto_rows, auto_warns = extract_auto(data, "mps")
+        if auto_rows:
+            rows = auto_rows
+            warns.extend(auto_warns)
     return rows, warns
 
 
